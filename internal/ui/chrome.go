@@ -12,12 +12,18 @@ import (
 )
 
 func (a *App) hamburgerRect() button {
+	if a.kit != nil {
+		return a.kit.geom.hud.hamburger.btn("Menu")
+	}
 	return button{x: 16, y: 12, w: 44, h: 44, label: "Menu"}
 }
 
 func (a *App) pipRect(c game.Color) button {
-	if a.ornatePersian() {
-		return a.persianScoreRect(c)
+	if a.kit != nil {
+		if c == game.White {
+			return a.kit.geom.pipWhite.btn("White score")
+		}
+		return a.kit.geom.pipBlack.btn("Black score")
 	}
 	if c == game.White {
 		return button{x: 1048, y: 4, w: 120, h: 46, label: "White score"}
@@ -121,7 +127,8 @@ func (a *App) menuPanel() button {
 	if w > screenW-32 {
 		w = screenW - 32
 	}
-	return button{x: 16, y: 64, w: w, h: h, label: "Game menu"}
+	hb := a.hamburgerRect()
+	return button{x: hb.x, y: hb.y + hb.h + 8, w: w, h: h, label: "Game menu"}
 }
 
 func (a *App) handleMenuKeys() {
@@ -316,8 +323,8 @@ func (a *App) drawThemePicker(screen *ebiten.Image) {
 	a.centerText(screen, "Applied immediately — game state is kept", a.small, 168, colMute)
 	for i, r := range a.themePreviewRects() {
 		t := Themes()[i]
-		if t.ID == ThemePersian {
-			a.drawPersianThemePreview(screen, r)
+		if k := kitFor(t.ID); k != nil {
+			k.drawPreview(screen, r)
 		} else {
 			vector.DrawFilledRect(screen, float32(r.x), float32(r.y), float32(r.w), float32(r.h), t.Wood, true)
 			vector.DrawFilledRect(screen, float32(r.x+10), float32(r.y+28), float32(r.w-20), 54, t.Felt, true)
@@ -341,22 +348,4 @@ func (a *App) drawThemePicker(screen *ebiten.Image) {
 	}
 	close := a.themeCloseRect()
 	a.drawStyledButton(screen, close, false)
-}
-
-func (a *App) drawPersianThemePreview(screen *ebiten.Image, r button) {
-	plate, err := loadPersianPlate()
-	if err != nil || plate == nil {
-		vector.DrawFilledRect(screen, float32(r.x), float32(r.y), float32(r.w), float32(r.h), color.RGBA{0x4a, 0x2a, 0x14, 0xff}, true)
-		return
-	}
-	op := &ebiten.DrawImageOptions{}
-	op.Filter = ebiten.FilterLinear
-	sw, sh := float64(plate.Bounds().Dx()), float64(plate.Bounds().Dy())
-	scale := r.w / sw
-	if sh*scale > r.h {
-		scale = r.h / sh
-	}
-	op.GeoM.Scale(scale, scale)
-	op.GeoM.Translate(r.x+(r.w-sw*scale)/2, r.y+(r.h-sh*scale)/2)
-	screen.DrawImage(plate, op)
 }

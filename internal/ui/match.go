@@ -59,9 +59,9 @@ func (a *App) resetBoardForGame() {
 	a.thinking = false
 	a.results = nil
 	if a.match.Crawford {
-		a.status = fmt.Sprintf("Crawford game %d — White to play", a.match.GameNum)
+		a.status = fmt.Sprintf("Crawford game %d — White to play — click the board to roll", a.match.GameNum)
 	} else {
-		a.status = fmt.Sprintf("Game %d — White to play", a.match.GameNum)
+		a.status = fmt.Sprintf("Game %d — White to play — click the board to roll", a.match.GameNum)
 	}
 }
 

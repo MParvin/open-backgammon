@@ -141,7 +141,7 @@ type App struct {
 	confirmSurrender bool
 	themePicker      bool
 	theme            Theme
-	art              artPlacement // screen placement of ornate board plate
+	kit              *boardKit // composed board for plate themes; nil for vector themes
 }
 
 func New(cfg config.Config) (*App, error) {
@@ -327,12 +327,12 @@ func (a *App) buttons() []button {
 		}
 		if a.winner == nil && a.humanTurn() && a.anim == nil && len(a.queue) == 0 && !a.thinking && !a.cubePrompt {
 			if a.canUndoHuman() {
-				btns = append(btns, button{label: "Undo", x: 80, y: 16, w: 110, h: 42, action: a.undoHuman, style: btnSecondary})
-			}
-			if a.canRoll() {
-				rb := a.rollButton()
-				rb.style = btnPrimary
-				btns = append(btns, rb)
+				undo := button{label: "Undo", x: 80, y: 16, w: 110, h: 42, action: a.undoHuman, style: btnSecondary}
+				if a.kit != nil {
+					u := a.kit.geom.hud.undo
+					undo.x, undo.y, undo.w, undo.h = u.x, u.y, u.w, u.h
+				}
+				btns = append(btns, undo)
 			}
 		}
 		return btns
@@ -598,7 +598,7 @@ func (a *App) endTurn() {
 	a.queue = nil
 	a.pause = 0
 	a.clearSelection()
-	a.status = a.turn.String() + " to play"
+	a.status = a.turn.String() + " to play — click the board to roll"
 }
 
 func (a *App) updateHumanInput() {
@@ -666,6 +666,10 @@ func (a *App) hitButton(x, y float64) bool {
 func (a *App) onClick(x, y float64) {
 	if a.awaitConfirm {
 		a.confirmTurn()
+		return
+	}
+	if a.canRoll() && a.onBoard(x, y) {
+		a.rollDice()
 		return
 	}
 	if !a.rolled || a.roll == nil || a.anim != nil || len(a.queue) > 0 {
@@ -813,20 +817,23 @@ func (a *App) drawGame(screen *ebiten.Image) {
 		label = a.player.Name() + " is thinking..."
 	}
 	statusX, statusY := 280.0, 18.0
-	matchY := 48.0
-	if a.ornatePersian() {
-		// Keep chrome in the letterbox / top frame so it does not cover medallions.
-		statusX, statusY = 56, 8
-		matchY = 34
+	matchX, matchY := statusX, 48.0
+	hintX, hintY := 470.0, 748.0
+	if a.kit != nil {
+		// Plate themes keep all chrome in the strips around the artwork.
+		h := a.kit.geom.hud
+		statusX, statusY = h.status.x, h.status.y
+		matchX, matchY = h.match.x, h.match.y
+		hintX, hintY = h.hint.x, h.hint.y
 	}
 	a.drawText(screen, label, a.body, statusX, statusY, colCream)
 	matchLine := fmt.Sprintf("Match %d–%d / %d   Game %d", a.match.White, a.match.Black, a.match.Target, a.match.GameNum)
 	if a.match.Crawford {
 		matchLine += "  (Crawford)"
 	}
-	a.drawText(screen, matchLine, a.small, statusX, matchY, colMute)
-	if a.ornatePersian() {
-		a.drawPersianPipScores(screen)
+	a.drawText(screen, matchLine, a.small, matchX, matchY, colMute)
+	if a.kit != nil {
+		a.drawKitPips(screen)
 	} else {
 		a.drawPipScore(screen, "White", a.view().Pips(game.White), 980, 12, colCream, game.White)
 		a.drawPipScore(screen, "Black", a.view().Pips(game.Black), 980, 58, colMute, game.Black)
@@ -853,22 +860,29 @@ func (a *App) drawGame(screen *ebiten.Image) {
 		a.drawThemePicker(screen)
 	}
 	if a.humanTurn() && a.rolled && a.roll != nil && a.hasFrom && !a.cubePrompt {
-		a.drawText(screen, "Choose a highlighted point", a.small, 470, 748, colMute)
+		a.drawText(screen, "Choose a highlighted point", a.small, hintX, hintY, colMute)
 	}
 	if a.awaitConfirm {
-		a.drawText(screen, "Move ready — left-click or Space", a.small, 470, 748, colGold)
+		a.drawText(screen, "Move ready — left-click or Space", a.small, hintX, hintY, colGold)
 	}
 }
 
 func (a *App) cubeRect() button {
+	if a.kit != nil {
+		return a.kit.geom.cube.btn("Doubling cube")
+	}
 	return button{x: 1164, y: 348, w: 88, h: 108, label: "Doubling cube"}
 }
 
 func (a *App) drawCube(screen *ebiten.Image) {
 	r := a.cubeRect()
-	x, y := r.x+16, r.y+8
 	mx, my := ebiten.CursorPosition()
 	hover := inRect(float64(mx), float64(my), r) && a.humanTurn() && !a.menuOpen && !a.themePicker && !a.cubePrompt
+	if a.kit != nil {
+		a.drawKitCube(screen, r, hover)
+		return
+	}
+	x, y := r.x+16, r.y+8
 	if hover && a.canOfferDouble() {
 		vector.StrokeRect(screen, float32(r.x), float32(r.y), float32(r.w), float32(r.h), 2, colSelect, true)
 	}
@@ -901,27 +915,6 @@ func (a *App) drawPipScore(screen *ebiten.Image, name string, pips int, x, y flo
 	a.drawText(screen, label, a.score, x+70, y-6, col)
 	if hover && a.canOfferDouble() {
 		a.drawText(screen, "Double", a.small, x+70, y+36, colGold)
-	}
-}
-
-func (a *App) drawPersianPipScores(screen *ebiten.Image) {
-	a.drawPersianPlaque(screen, game.White, "You", a.view().Pips(game.White))
-	a.drawPersianPlaque(screen, game.Black, "Computer", a.view().Pips(game.Black))
-}
-
-func (a *App) drawPersianPlaque(screen *ebiten.Image, c game.Color, title string, pips int) {
-	r := a.persianScoreRect(c)
-	hover := a.hoverOwnScore(c)
-	if hover {
-		vector.StrokeRect(screen, float32(r.x), float32(r.y), float32(r.w), float32(r.h), 2, colGold, true)
-	}
-	tw, _ := text.Measure(title, a.small, 0)
-	a.drawText(screen, title, a.small, r.x+(r.w-tw)/2, r.y+10, colGold)
-	label := fmt.Sprintf("%d", pips)
-	nw, _ := text.Measure(label, a.score, 0)
-	a.drawText(screen, label, a.score, r.x+(r.w-nw)/2, r.y+r.h*0.38, colCream)
-	if hover && a.canOfferDouble() {
-		a.drawText(screen, "Double", a.small, r.x+12, r.y+r.h-22, colGold)
 	}
 }
 
@@ -1363,12 +1356,8 @@ func (a *App) saveSettings() {
 }
 
 func (a *App) drawButtons(screen *ebiten.Image) {
-	for i, b := range a.buttons() {
-		if b.label == "Roll" {
-			vector.DrawFilledRect(screen, float32(b.x-4), float32(b.y-4), float32(b.w+8), float32(b.h+8), color.RGBA{0x1a, 0x12, 0x0c, 0x88}, true)
-		}
+	for _, b := range a.buttons() {
 		a.drawStyledButton(screen, b, false)
-		_ = i
 	}
 }
 

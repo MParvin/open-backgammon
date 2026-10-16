@@ -24,6 +24,7 @@ Open the hamburger menu for **Themes** and **Surrender**. The default **Persian 
 
 ### Checker controls
 
+- **Left-click the board** (or press **Space**) to roll when it is your turn.
 - **Left-click** your checker: use the **larger** remaining die (or select it and show destinations if that die has more than one legal landing).
 - **Right-click** your checker: use the **smaller** remaining die the same way. (Native window; no browser context menu.)
 - **Click a highlighted destination** or **drag** after a selection when you need to pick among landings.

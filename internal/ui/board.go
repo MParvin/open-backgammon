@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"image/color"
-	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -22,6 +21,8 @@ type boardLayout struct {
 	leftX, rightX, halfW       float64
 	pointW                     float64
 	trayX, trayW               float64
+	trayY, trayH               float64
+	r                          float64 // checker radius
 }
 
 func newLayout() boardLayout {
@@ -41,6 +42,9 @@ func newLayout() boardLayout {
 		pointW: halfW / 6,
 		trayX:  feltX + feltW + 14,
 		trayW:  trayW,
+		trayY:  feltY,
+		trayH:  feltH,
+		r:      20,
 	}
 }
 
@@ -61,7 +65,7 @@ var (
 	colCream   = color.RGBA{0xfb, 0xf6, 0xec, 0xff}
 	colInk     = color.RGBA{0x2a, 0x1a, 0x10, 0xff}
 	colMute    = color.RGBA{0xd7, 0xc7, 0xae, 0xff}
-	colSelect = color.RGBA{0xff, 0xd7, 0x6a, 0xff}
+	colSelect  = color.RGBA{0xff, 0xd7, 0x6a, 0xff}
 )
 
 func (l boardLayout) slot(point int) (col int, top bool) {
@@ -111,22 +115,22 @@ func (l boardLayout) barAt(x, y float64) bool {
 }
 
 func (l boardLayout) trayAt(x, y float64) bool {
-	return x >= l.trayX && x < l.trayX+l.trayW && y >= l.feltY && y < l.feltY+l.feltH
+	return x >= l.trayX && x < l.trayX+l.trayW && y >= l.trayY && y < l.trayY+l.trayH
 }
 
 func (l boardLayout) checkerXY(point, index, total int) (float64, float64) {
 	col, top := l.slot(point)
 	cx := l.colX(col) + l.pointW/2
-	r := 20.0
-	span := l.feltH/2 - 36
-	gap := 42.0
+	r := l.r
+	span := l.feltH/2 - r - 16
+	gap := 2*r + 2
 	if total > 1 && gap*float64(total-1) > span {
 		gap = span / float64(total-1)
 	}
 	if top {
-		return cx, l.feltY + 26 + float64(index)*gap + r*0
+		return cx, l.feltY + r + 6 + float64(index)*gap
 	}
-	return cx, l.feltY + l.feltH - 26 - float64(index)*gap
+	return cx, l.feltY + l.feltH - r - 6 - float64(index)*gap
 }
 
 func (l boardLayout) barXY(c game.Color, index, total int) (float64, float64) {
@@ -141,14 +145,14 @@ func (l boardLayout) barXY(c game.Color, index, total int) (float64, float64) {
 func (l boardLayout) offXY(c game.Color, index int) (float64, float64) {
 	cx := l.trayX + l.trayW/2
 	if c == game.White {
-		return cx, l.feltY + l.feltH - 24 - float64(index)*10
+		return cx, l.trayY + l.trayH - 14 - float64(index)*10
 	}
-	return cx, l.feltY + 24 + float64(index)*10
+	return cx, l.trayY + 14 + float64(index)*10
 }
 
 func (a *App) drawBoard(screen *ebiten.Image, b game.Board) {
-	if a.ornatePersian() {
-		a.drawPersianBoard(screen, b)
+	if a.kit != nil {
+		a.drawKitBoard(screen, b)
 		return
 	}
 	a.drawBoardClassic(screen, b)
@@ -159,13 +163,16 @@ func (a *App) drawBoardClassic(screen *ebiten.Image, b game.Board) {
 	vector.DrawFilledRect(screen, 0, 0, screenW, screenH, colBG, false)
 	vector.DrawFilledRect(screen, 28, 72, 1224, 700, colWood, false)
 	vector.DrawFilledRect(screen, 36, 80, 1088, 684, colWoodHi, false)
-	a.drawFrameMotif(screen)
+	border := colGoldDk
+	if a.theme.ID == ThemeModern {
+		border = a.theme.Accent
+	}
+	vector.StrokeRect(screen, 42, 86, 1076, 672, 1.5, border, true)
 	vector.DrawFilledRect(screen, float32(l.feltX), float32(l.feltY), float32(l.feltW), float32(l.feltH), colFelt, false)
-	a.drawWoodGrain(screen)
 	vector.DrawFilledRect(screen, float32(l.barX), float32(l.feltY), float32(l.barW), float32(l.feltH), colFeltDk, false)
-	vector.DrawFilledRect(screen, float32(l.trayX), float32(l.feltY), float32(l.trayW), float32(l.feltH), color.RGBA{0x2a, 0x1c, 0x12, 0xff}, false)
+	vector.DrawFilledRect(screen, float32(l.trayX), float32(l.trayY), float32(l.trayW), float32(l.trayH), color.RGBA{0x2a, 0x1c, 0x12, 0xff}, false)
 	if a.hintOff() {
-		vector.StrokeRect(screen, float32(l.trayX), float32(l.feltY), float32(l.trayW), float32(l.feltH), 3, colSelect, true)
+		vector.StrokeRect(screen, float32(l.trayX), float32(l.trayY), float32(l.trayW), float32(l.trayH), 3, colSelect, true)
 	}
 
 	for col := 0; col < 12; col++ {
@@ -173,152 +180,29 @@ func (a *App) drawBoardClassic(screen *ebiten.Image, b game.Board) {
 			a.drawPoint(screen, l, l.pointOf(col, top), top)
 		}
 	}
-	a.drawBarOrnament(screen)
 	a.drawCheckers(screen, b)
 	a.drawDice(screen)
 }
 
-func (a *App) woodTheme() bool {
-	return a.theme.ID == ThemePersian || a.theme.ID == ThemeChinese
-}
-
-// drawWoodGrain adds faint vertical planks on the light-wood themes.
-func (a *App) drawWoodGrain(screen *ebiten.Image) {
-	if !a.woodTheme() {
-		return
+// pointTriangle returns the three corners of a point's triangle.
+func (l boardLayout) pointTriangle(point int, top bool, length float64) (x0, baseY, x1, tipX, tipY float64) {
+	col, _ := l.slot(point)
+	x := l.colX(col)
+	if length <= 0 {
+		length = l.feltH/2 - 18
 	}
-	l := a.layout
-	grain := color.RGBA{colFelt.R - 12, colFelt.G - 10, colFelt.B - 8, 0xff}
-	for x := l.feltX + 18; x < l.feltX+l.feltW; x += 36 {
-		if x > l.barX-2 && x < l.barX+l.barW+2 {
-			continue
-		}
-		vector.StrokeLine(screen, float32(x), float32(l.feltY+4), float32(x), float32(l.feltY+l.feltH-4), 1, grain, true)
+	if top {
+		baseY = l.feltY
+		tipY = baseY + length
+	} else {
+		baseY = l.feltY + l.feltH
+		tipY = baseY - length
 	}
-}
-
-// drawFrameMotif paints the carved outer frame from the reference boards.
-func (a *App) drawFrameMotif(screen *ebiten.Image) {
-	accent := a.theme.Accent
-	switch a.theme.ID {
-	case ThemePersian:
-		a.drawCarvedFrame(screen, accent, true)
-	case ThemeChinese:
-		a.drawCarvedFrame(screen, accent, false)
-	case ThemeModern:
-		vector.StrokeRect(screen, 40, 84, 1080, 676, 1.5, accent, true)
-	default:
-		vector.StrokeRect(screen, 42, 86, 1076, 672, 1.5, colGoldDk, true)
-	}
-}
-
-func (a *App) drawCarvedFrame(screen *ebiten.Image, accent color.RGBA, diamonds bool) {
-	vector.StrokeRect(screen, 40, 82, 1080, 680, 2, colGoldDk, true)
-	vector.StrokeRect(screen, 46, 88, 1068, 668, 1, accent, true)
-	for i := 0; i < 14; i++ {
-		x := 70 + float64(i)*74
-		if diamonds {
-			drawDiamond(screen, float32(x), 96, 10, 8, colGold)
-			drawDiamond(screen, float32(x), 742, 10, 8, colGold)
-		} else {
-			vector.StrokeLine(screen, float32(x-8), 94, float32(x+8), 94, 1.5, colGold, true)
-			vector.StrokeLine(screen, float32(x-8), 744, float32(x+8), 744, 1.5, colGold, true)
-		}
-	}
-}
-
-func drawDiamond(screen *ebiten.Image, cx, cy, rx, ry float32, clr color.RGBA) {
-	var path vector.Path
-	path.MoveTo(cx, cy-ry)
-	path.LineTo(cx+rx, cy)
-	path.LineTo(cx, cy+ry)
-	path.LineTo(cx-rx, cy)
-	path.Close()
-	var opt vector.DrawPathOptions
-	opt.AntiAlias = true
-	opt.ColorScale.ScaleWithColor(clr)
-	vector.FillPath(screen, &path, nil, &opt)
-}
-
-// drawBarOrnament paints the center motif: Persian star medallion or Chinese dragon.
-func (a *App) drawBarOrnament(screen *ebiten.Image) {
-	l := a.layout
-	cx := float32(l.barX + l.barW/2)
-	cy := float32(l.feltY + l.feltH/2)
-	switch a.theme.ID {
-	case ThemePersian:
-		drawPersianMedallion(screen, cx, cy)
-	case ThemeChinese:
-		drawChineseDragon(screen, cx, cy)
-	}
-}
-
-func drawPersianMedallion(screen *ebiten.Image, cx, cy float32) {
-	red := color.RGBA{0x8a, 0x1c, 0x18, 0xff}
-	gold := color.RGBA{0xe8, 0xc0, 0x48, 0xff}
-	cream := color.RGBA{0xf6, 0xe6, 0xc0, 0xff}
-	vector.DrawFilledCircle(screen, cx, cy, 22, red, true)
-	vector.StrokeCircle(screen, cx, cy, 22, 1.6, gold, true)
-	drawStar(screen, cx, cy, 18, 8, 8, gold)
-	vector.DrawFilledCircle(screen, cx, cy, 7, cream, true)
-	vector.StrokeCircle(screen, cx, cy, 7, 1.2, gold, true)
-	drawStar(screen, cx, cy, 5, 2.2, 8, red)
-	vector.DrawFilledCircle(screen, cx, cy, 2.2, gold, true)
-}
-
-func drawStar(screen *ebiten.Image, cx, cy, outer, inner float32, n int, clr color.RGBA) {
-	var path vector.Path
-	for i := 0; i < n*2; i++ {
-		ang := float64(i)*math.Pi/float64(n) - math.Pi/2
-		r := outer
-		if i%2 == 1 {
-			r = inner
-		}
-		x := cx + float32(math.Cos(ang))*r
-		y := cy + float32(math.Sin(ang))*r
-		if i == 0 {
-			path.MoveTo(x, y)
-		} else {
-			path.LineTo(x, y)
-		}
-	}
-	path.Close()
-	var opt vector.DrawPathOptions
-	opt.AntiAlias = true
-	opt.ColorScale.ScaleWithColor(clr)
-	vector.FillPath(screen, &path, nil, &opt)
-}
-
-func drawChineseDragon(screen *ebiten.Image, cx, cy float32) {
-	gold := color.RGBA{0xe8, 0xc0, 0x48, 0xff}
-	// Vertical S-curve body along the bar.
-	var path vector.Path
-	const steps = 28
-	for i := 0; i <= steps; i++ {
-		t := float64(i) / steps
-		y := cy - 70 + float32(t)*140
-		x := cx + float32(math.Sin(t*math.Pi*2))*10
-		if i == 0 {
-			path.MoveTo(x, y)
-		} else {
-			path.LineTo(x, y)
-		}
-	}
-	var stroke vector.StrokeOptions
-	stroke.Width = 3.2
-	var opt vector.DrawPathOptions
-	opt.AntiAlias = true
-	opt.ColorScale.ScaleWithColor(gold)
-	vector.StrokePath(screen, &path, &stroke, &opt)
-	// Head at the top of the curve, tail curl at the bottom.
-	vector.DrawFilledCircle(screen, cx, cy-74, 6, gold, true)
-	vector.DrawFilledCircle(screen, cx-2, cy-76, 1.4, color.RGBA{0x3a, 0x18, 0x08, 0xff}, true)
-	vector.StrokeCircle(screen, cx+8, cy+72, 6, 1.6, gold, true)
+	return x + 3, baseY, x + l.pointW - 3, x + l.pointW/2, tipY
 }
 
 func (a *App) drawPoint(screen *ebiten.Image, l boardLayout, point int, top bool) {
 	col, _ := l.slot(point)
-	x := l.colX(col)
 	clr := colPointL
 	if (col+boolInt(top))%2 == 1 {
 		clr = colPointD
@@ -326,17 +210,16 @@ func (a *App) drawPoint(screen *ebiten.Image, l boardLayout, point int, top bool
 	if a.hintPoint(point) {
 		clr = color.RGBA{0xff, 0xe0, 0x8a, 0xff}
 	}
-	h := l.feltH/2 - 18
-	tipY := l.feltY + h
-	baseY := l.feltY + 8
-	if !top {
-		baseY = l.feltY + l.feltH - 8
-		tipY = baseY - h
+	x0, baseY, x1, tipX, tipY := l.pointTriangle(point, top, 0)
+	if top {
+		baseY += 8
+	} else {
+		baseY -= 8
 	}
 	var path vector.Path
-	path.MoveTo(float32(x+4), float32(baseY))
-	path.LineTo(float32(x+l.pointW-4), float32(baseY))
-	path.LineTo(float32(x+l.pointW/2), float32(tipY))
+	path.MoveTo(float32(x0+1), float32(baseY))
+	path.LineTo(float32(x1-1), float32(baseY))
+	path.LineTo(float32(tipX), float32(tipY))
 	path.Close()
 	var draw vector.DrawPathOptions
 	draw.AntiAlias = true
@@ -344,8 +227,8 @@ func (a *App) drawPoint(screen *ebiten.Image, l boardLayout, point int, top bool
 	vector.FillPath(screen, &path, nil, &draw)
 
 	if a.hasFrom && a.selFrom == point {
-		vector.StrokeLine(screen, float32(x+6), float32(baseY), float32(x+l.pointW/2), float32(tipY), 3, colSelect, true)
-		vector.StrokeLine(screen, float32(x+l.pointW-6), float32(baseY), float32(x+l.pointW/2), float32(tipY), 3, colSelect, true)
+		vector.StrokeLine(screen, float32(x0+3), float32(baseY), float32(tipX), float32(tipY), 3, colSelect, true)
+		vector.StrokeLine(screen, float32(x1-3), float32(baseY), float32(tipX), float32(tipY), 3, colSelect, true)
 	}
 }
 
@@ -403,20 +286,20 @@ func (a *App) drawCheckers(screen *ebiten.Image, b game.Board) {
 	blackOff := b.BorneOff(game.Black) - a.skipOff(game.Black)
 	for i := 0; i < whiteOff; i++ {
 		x, y := l.offXY(game.White, i)
-		drawChecker(screen, x, y, 16, game.White)
+		a.drawOffChecker(screen, x, y, game.White)
 	}
 	for i := 0; i < blackOff; i++ {
 		x, y := l.offXY(game.Black, i)
-		drawChecker(screen, x, y, 16, game.Black)
+		a.drawOffChecker(screen, x, y, game.Black)
 	}
 	if a.anim != nil {
 		t := smoother(a.anim.t)
 		x := a.anim.x0 + (a.anim.x1-a.anim.x0)*t
 		y := a.anim.y0 + (a.anim.y1-a.anim.y0)*t
-		drawChecker(screen, x, y, 20, a.anim.color)
+		a.drawChecker(screen, x, y, l.r, a.anim.color)
 	}
 	if a.dragging {
-		drawChecker(screen, float64(a.dragX), float64(a.dragY), 20, a.turn)
+		a.drawChecker(screen, float64(a.dragX), float64(a.dragY), l.r, a.turn)
 	}
 }
 
@@ -427,7 +310,7 @@ func (a *App) stack(screen *ebiten.Image, c game.Color, n int, xy func(i, n int)
 	}
 	for i := 0; i < drawN; i++ {
 		x, y := xy(i, n)
-		drawChecker(screen, x, y, 20, c)
+		a.drawChecker(screen, x, y, a.layout.r, c)
 	}
 }
 
@@ -448,16 +331,34 @@ func (a *App) skipOff(c game.Color) int {
 	return 0
 }
 
+// drawChecker paints one checker centred at (x, y): a sprite cut from the
+// reference artwork on plate themes, a shaded disc otherwise.
+func (a *App) drawChecker(screen *ebiten.Image, x, y, r float64, c game.Color) {
+	if a.kit != nil {
+		a.kit.drawChecker(screen, x, y, r, c)
+		return
+	}
+	drawChecker(screen, x, y, r, c)
+}
+
+// drawOffChecker draws a borne-off checker. Plate themes show them edge-on
+// as slats in the tray; the classic board keeps small discs.
+func (a *App) drawOffChecker(screen *ebiten.Image, x, y float64, c game.Color) {
+	if a.kit != nil {
+		a.kit.drawSlat(screen, x, y, c)
+		return
+	}
+	drawChecker(screen, x, y, 16, c)
+}
+
 func drawChecker(screen *ebiten.Image, x, y, r float64, c game.Color) {
 	fill, line := colWhite, colWhiteLn
 	if c == game.Black {
 		fill, line = colBlack, colBlackLn
 	}
-	// Soft drop shadow (light from top-left, matching the reference plate).
 	vector.DrawFilledCircle(screen, float32(x+2.4), float32(y+3.4), float32(r+0.8), color.RGBA{0, 0, 0, 80}, true)
 	vector.DrawFilledCircle(screen, float32(x), float32(y), float32(r+1.4), line, true)
 	vector.DrawFilledCircle(screen, float32(x), float32(y), float32(r-0.4), fill, true)
-	// Recessed dish like the ivory/ebony checkers in the photo.
 	if c == game.White {
 		vector.DrawFilledCircle(screen, float32(x), float32(y+0.6), float32(r*0.52), color.RGBA{0x90, 0x78, 0x50, 0x40}, true)
 		vector.DrawFilledCircle(screen, float32(x-r*0.28), float32(y-r*0.32), float32(r*0.2), color.RGBA{255, 255, 255, 55}, true)
@@ -477,19 +378,30 @@ func (l boardLayout) diceOrigin() (float64, float64) {
 	return cx - total/2, cy - dieSize/2
 }
 
+// dicePlacement returns the first die's origin, the die size, and the gap
+// to the second die (which follows horizontally, or vertically on kits
+// that stack dice in a well).
 func (a *App) dicePlacement() (x, y, size, gap float64) {
-	if a.ornatePersian() {
-		x, y, size = a.persianDiceOrigin()
-		gap = size * 0.18
-		return x, y, size, gap
+	if a.kit != nil {
+		d := a.kit.geom.dice
+		return d.x, d.y, d.w, d.w * 0.18
 	}
 	x, y = a.layout.diceOrigin()
 	return x, y, dieSize, 16
 }
 
-func (a *App) rollButton() button {
-	x, y, size, gap := a.dicePlacement()
-	return button{label: "Roll", x: x, y: y, w: size*2 + gap, h: size, action: a.rollDice}
+func (a *App) onBoard(x, y float64) bool {
+	l := a.layout
+	if x >= l.feltX && x < l.feltX+l.feltW && y >= l.feltY && y < l.feltY+l.feltH {
+		return true
+	}
+	if l.trayAt(x, y) {
+		return true
+	}
+	if a.kit != nil {
+		return a.kit.geom.board.contains(x, y)
+	}
+	return false
 }
 
 func (a *App) drawDice(screen *ebiten.Image) {
@@ -500,45 +412,30 @@ func (a *App) drawDice(screen *ebiten.Image) {
 	}
 	x, y, size, gap := a.dicePlacement()
 	used0, used1 := a.dieUsedFlags()
-	if a.ornatePersian() {
-		// Stack dice vertically in the left recessed well.
-		drawIvoryDie(screen, x, y, size, a.dice[0], used0)
-		drawIvoryDie(screen, x, y+size+gap, size, a.dice[1], used1)
+	rem := 0
+	if a.roll != nil {
+		rem = len(a.roll.RemainingDiceValues())
+	}
+	if a.kit != nil {
+		x2, y2 := x+size+gap, y
+		if a.kit.geom.diceVertical {
+			x2, y2 = x, y+size+gap
+		}
+		a.kit.drawDie(screen, x, y, size, a.dice[0], used0, 0)
+		a.kit.drawDie(screen, x2, y2, size, a.dice[1], used1, 1)
 		if a.dice[0] == a.dice[1] {
-			rem := 0
-			if a.roll != nil {
-				rem = len(a.roll.RemainingDiceValues())
+			if a.kit.geom.diceVertical {
+				a.drawText(screen, fmt.Sprintf("x%d", rem), a.small, x+size+4, y+size, colGold)
+			} else {
+				a.drawText(screen, fmt.Sprintf("x%d", rem), a.small, x2+size+8, y+size/2-8, colGold)
 			}
-			a.drawText(screen, fmt.Sprintf("x%d", rem), a.small, x+size+6, y+size, colGold)
 		}
 		return
 	}
 	drawDie(screen, x, y, a.dice[0], used0)
 	drawDie(screen, x+size+gap, y, a.dice[1], used1)
 	if a.dice[0] == a.dice[1] {
-		rem := 0
-		if a.roll != nil {
-			rem = len(a.roll.RemainingDiceValues())
-		}
 		a.drawText(screen, fmt.Sprintf("x%d", rem), a.small, x+size*2+gap+8, y+size/2-8, colGold)
-	}
-}
-
-func drawIvoryDie(screen *ebiten.Image, x, y, size float64, n int, used bool) {
-	fill := color.RGBA{0xed, 0xe0, 0xc8, 0xff}
-	edge := color.RGBA{0xa8, 0x90, 0x68, 0xff}
-	pip := color.RGBA{0x1a, 0x14, 0x10, 0xff}
-	if used {
-		fill = color.RGBA{0x9a, 0x88, 0x68, 0xff}
-		pip = color.RGBA{0x40, 0x30, 0x20, 0xff}
-	}
-	vector.DrawFilledCircle(screen, float32(x+2), float32(y+3), float32(size*0.52), color.RGBA{0, 0, 0, 60}, true)
-	r := float32(size * 0.18)
-	drawRoundRect(screen, float32(x), float32(y), float32(size), float32(size), r, fill)
-	vector.StrokeRect(screen, float32(x), float32(y), float32(size), float32(size), 1.5, edge, true)
-	scale := size / 28
-	for _, p := range diePips(n) {
-		vector.DrawFilledCircle(screen, float32(x+p[0]*scale), float32(y+p[1]*scale), float32(2.8*scale), pip, true)
 	}
 }
 

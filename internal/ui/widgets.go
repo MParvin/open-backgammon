@@ -49,12 +49,9 @@ func (a *App) drawStyledButton(screen *ebiten.Image, b button, focused bool) {
 	}
 	r := float32(10)
 	drawRoundRect(screen, float32(b.x), float32(b.y), float32(b.w), float32(b.h), r, fill)
-	vector.StrokeRect(screen, float32(b.x), float32(b.y), float32(b.w), float32(b.h), 2, border, true)
+	strokeRoundRect(screen, b.x, b.y, b.w, b.h, float64(r), 2, border)
 
 	face := a.body
-	if b.label == "Roll" {
-		face = a.score
-	}
 	tw, th := text.Measure(b.label, face, 0)
 	iconW := 0.0
 	if b.style == btnAccept || b.style == btnReject || b.style == btnDanger {
@@ -81,8 +78,8 @@ func lighten(c color.RGBA, n uint8) color.RGBA {
 	return color.RGBA{add(c.R, n), add(c.G, n), add(c.B, n), c.A}
 }
 
-func drawRoundRect(screen *ebiten.Image, x, y, w, h, _ float32, fill color.RGBA) {
-	vector.DrawFilledRect(screen, x, y, w, h, fill, true)
+func drawRoundRect(screen *ebiten.Image, x, y, w, h, r float32, fill color.RGBA) {
+	fillRoundRect(screen, float64(x), float64(y), float64(w), float64(h), float64(r), fill)
 }
 
 // drawCheckIcon draws a white checkmark centered near (cx, cy).

@@ -1,12 +1,18 @@
+---
 name: Release
 
-on:
+"on":
   push:
     tags:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  LINUX_DEPS: >-
+    gcc pkg-config libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev
+    libxcursor-dev libxi-dev libxxf86vm-dev libasound2-dev
 
 jobs:
   test:
@@ -21,19 +27,16 @@ jobs:
       - name: Install Ebitengine Linux deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gcc pkg-config \
-            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev \
-            libxcursor-dev libxi-dev libxxf86vm-dev libasound2-dev
+          sudo apt-get install -y --no-install-recommends $LINUX_DEPS
       - name: Test
         run: go test ./...
 
   build:
-    name: Build ${{ matrix.goos }}
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
     needs: test
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - os: ubuntu-latest
@@ -48,7 +51,8 @@ jobs:
             goos: darwin
             goarch: arm64
             ext: ""
-          - os: macos-13
+          # macos-13 was retired by GitHub; cross-compile amd64 on arm64
+          - os: macos-latest
             goos: darwin
             goarch: amd64
             ext: ""
@@ -62,20 +66,25 @@ jobs:
         if: matrix.goos == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gcc pkg-config \
-            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev \
-            libxcursor-dev libxi-dev libxxf86vm-dev libasound2-dev
-      - name: Build
+          sudo apt-get install -y --no-install-recommends $LINUX_DEPS
+      - name: Build and package
         shell: bash
         env:
           CGO_ENABLED: "1"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          EXT: ${{ matrix.ext }}
+          TAG: ${{ github.ref_name }}
         run: |
           mkdir -p dist
-          NAME="open-backgammon-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
-          go build -trimpath -ldflags "-s -w" -o "dist/${NAME}" ./cmd/backgammon
+          BASE="open-backgammon-${TAG}-${GOOS}-${GOARCH}"
+          go build -trimpath -ldflags "-s -w" \
+            -o "open-backgammon${EXT}" ./cmd/backgammon
+          if [ "${GOOS}" = "windows" ]; then
+            7z a -tzip "dist/${BASE}.zip" "open-backgammon${EXT}"
+          else
+            tar -czf "dist/${BASE}.tar.gz" "open-backgammon"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: open-backgammon-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -86,23 +95,23 @@ jobs:
     name: GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
       - name: Checksums
+        working-directory: artifacts
         run: |
-          cd artifacts
           sha256sum * > SHA256SUMS.txt
           ls -la
       - name: Publish release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: artifacts/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,33 @@
+version: "3"
+
+tasks:
+  tidy:
+    desc: Download modules and tidy go.mod
+    cmds:
+      - go mod tidy
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  build:
+    desc: Build the Linux binary
+    cmds:
+      - mkdir -p bin
+      - GOOS=linux go build -o bin/backgammon ./cmd/backgammon
+
+  run:
+    desc: Run the game
+    cmds:
+      - go run ./cmd/backgammon
+
+  benchdiff:
+    desc: Self-play Easy/Intermediate/Hard win-rate benchmark
+    cmds:
+      - go run ./cmd/benchdiff -- {{.CLI_ARGS}}

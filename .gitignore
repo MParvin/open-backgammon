@@ -1,0 +1,27 @@
+# Build
+bin/
+*.exe
+*.test
+*.out
+
+# Go
+vendor/
+
+# Environment and local secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Generated snapshots and local comparison images
+persian_snap.png
+open-gammon.png
+Ornate Persian Backgammon Board.png

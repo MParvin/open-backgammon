@@ -97,6 +97,17 @@ sudo apt install golang gcc pkg-config libgl1-mesa-dev libx11-dev libxrandr-dev 
 
 The UI font is Liberation Sans, under the SIL Open Font License (`assets/fonts/OFL.txt`).
 
+## Releases
+
+Pushing a version tag publishes Linux, Windows, and macOS binaries:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+GitHub Actions runs tests, builds `open-backgammon-<tag>-<os>-<arch>` (with `.exe` on Windows), and attaches the files plus `SHA256SUMS.txt` to the GitHub Release.
+
 ## Layout
 
 - `cmd/backgammon` — window entry point

@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install Ebitengine Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc pkg-config \
+            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxxf86vm-dev libasound2-dev
+      - name: Test
+        run: go test ./...
+
+  build:
+    name: Build ${{ matrix.goos }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            ext: ""
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            ext: ""
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+            ext: ""
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install Ebitengine Linux deps
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc pkg-config \
+            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libxxf86vm-dev libasound2-dev
+      - name: Build
+        env:
+          CGO_ENABLED: "1"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          NAME="open-backgammon-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          go build -trimpath -ldflags "-s -w" -o "dist/${NAME}" ./cmd/backgammon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: open-backgammon-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd artifacts
+          sha256sum * > SHA256SUMS.txt
+          ls -la
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
